@@ -12,6 +12,9 @@ use Magento\CatalogUrlRewrite\Model\ProductUrlRewriteGenerator;
 use Magento\Catalog\Model\ResourceModel\Product\Collection;
 use Magento\Store\Model\Store;
 use Magento\Framework\App\State;
+use Magento\Framework\App\ResourceConnection;
+use Magento\Catalog\Model\Product;
+use Magento\Eav\Model\Config;
 
 class RegenerateProductUrlCommand extends Command
 {
@@ -35,16 +38,30 @@ class RegenerateProductUrlCommand extends Command
      */
     protected $state;
 
+    /**
+     * @var ResourceConnection
+     */
+    protected $resource;
+
+    /**
+     * @var Config
+     */
+    protected $eavConfig;
+
     public function __construct(
         State $state,
         Collection $collection,
         ProductUrlRewriteGenerator $productUrlRewriteGenerator,
-        UrlPersistInterface $urlPersist
+        UrlPersistInterface $urlPersist,
+        ResourceConnection $resource,
+        Config $eavConfig
     ) {
         $this->state = $state;
         $this->collection = $collection;
         $this->productUrlRewriteGenerator = $productUrlRewriteGenerator;
         $this->urlPersist = $urlPersist;
+        $this->resource = $resource;
+        $this->eavConfig = $eavConfig;
         parent::__construct();
     }
 
@@ -76,6 +93,8 @@ class RegenerateProductUrlCommand extends Command
         $store_id = $inp->getOption('store');
         $this->collection->addStoreFilter($store_id)->setStoreId($store_id);
 
+        $this->cleanStoreUrls($store_id);
+
         $pids = $inp->getArgument('pids');
         if( !empty($pids) )
             $this->collection->addIdFilter($pids);
@@ -101,6 +120,17 @@ class RegenerateProductUrlCommand extends Command
             catch(\Exception $e) {
                 $out->writeln('<error>Duplicated url for '. $product->getId() .'</error>');
             }
+        }
+    }
+
+    private function cleanStoreUrls($store_id)
+    {
+        $connection = $this->resource->getConnection();
+        $attributeId = $this->eavConfig->getAttribute(Product::ENTITY, 'url_key')->getId();
+        if (is_string($store_id)) {
+            $connection->query("DELETE FROM `catalog_product_entity_varchar` WHERE `attribute_id`='" . $attributeId . "' AND `store_id`='" . $store_id . "';");
+        } else {
+            $connection->query("DELETE FROM `catalog_product_entity_varchar` WHERE `attribute_id`='" . $attributeId . "' AND `store_id` NOT IN ('0');");
         }
     }
 }
